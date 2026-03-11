@@ -53,10 +53,37 @@ final class UsageStore {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("ClaudeUsageBar/1.0", forHTTPHeaderField: "User-Agent")
+        req.setValue("claude-code/2.1.72", forHTTPHeaderField: "User-Agent")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            let httpResponse = response as? HTTPURLResponse
+            let statusCode = httpResponse?.statusCode ?? 0
+
+            if statusCode == 429 {
+                // Retry after delay
+                let retryAfter = Double(httpResponse?.value(forHTTPHeaderField: "Retry-After") ?? "30") ?? 30
+                self.error = "Rate limited, retry in \(Int(retryAfter))s..."
+                try? await Task.sleep(nanoseconds: UInt64(retryAfter * 1_000_000_000))
+                // Retry once
+                let (retryData, retryResp) = try await URLSession.shared.data(for: req)
+                let retryStatus = (retryResp as? HTTPURLResponse)?.statusCode ?? 0
+                if retryStatus == 200 {
+                    oauthUsage = try JSONDecoder().decode(OAuthUsage.self, from: retryData)
+                    lastRefresh = Date()
+                    error = nil
+                } else {
+                    self.error = "API \(retryStatus) after retry"
+                }
+                return
+            }
+
+            if statusCode != 200 {
+                let body = String(data: data, encoding: .utf8) ?? "unknown"
+                self.error = "API \(statusCode): \(body.prefix(100))"
+                return
+            }
+
             oauthUsage = try JSONDecoder().decode(OAuthUsage.self, from: data)
             lastRefresh = Date()
             error = nil
