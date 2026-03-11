@@ -25,28 +25,7 @@ struct UsageView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    // Rate Limits Section
                     rateLimitsSection
-
-                    Divider()
-
-                    // Today's Activity
-                    todaySection
-
-                    Divider()
-
-                    // Weekly Summary
-                    weeklySection
-
-                    Divider()
-
-                    // Activity Chart
-                    chartSection
-
-                    Divider()
-
-                    // Model Usage
-                    modelSection
                 }
                 .padding(16)
             }
@@ -77,7 +56,7 @@ struct UsageView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .frame(width: 320, height: 520)
+        .frame(width: 300)
     }
 
     // MARK: - Rate Limits
@@ -176,122 +155,4 @@ struct UsageView: View {
         return .green
     }
 
-    // MARK: - Today
-
-    @ViewBuilder
-    var todaySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Today", systemImage: "calendar")
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
-
-            if let today = store.todayActivity {
-                HStack(spacing: 16) {
-                    statBadge(value: "\(today.messageCount)", label: "msgs", icon: "bubble.left.fill", color: .blue)
-                    statBadge(value: "\(today.toolCallCount)", label: "tools", icon: "wrench.fill", color: .orange)
-                    statBadge(value: "\(today.sessionCount)", label: "sessions", icon: "rectangle.stack.fill", color: .purple)
-                }
-            } else {
-                Text("No activity yet")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    func statBadge(value: String, label: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                    .foregroundStyle(color)
-                Text(value)
-                    .font(.system(.body, design: .rounded).bold())
-            }
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Weekly
-
-    @ViewBuilder
-    var weeklySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("This Week", systemImage: "chart.bar")
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 16) {
-                statBadge(value: "\(store.weekMessages)", label: "messages", icon: "bubble.left.fill", color: .blue)
-                statBadge(value: "\(store.weekSessions)", label: "sessions", icon: "rectangle.stack.fill", color: .purple)
-            }
-        }
-    }
-
-    // MARK: - Chart
-
-    @ViewBuilder
-    var chartSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Recent Activity", systemImage: "chart.xyaxis.line")
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
-
-            let days = store.recentDays
-            if !days.isEmpty {
-                let maxMsg = days.map(\.messageCount).max() ?? 1
-                HStack(alignment: .bottom, spacing: 2) {
-                    ForEach(days) { day in
-                        VStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(day.date == store.todayActivity?.date ? Color.purple : Color.blue.opacity(0.6))
-                                .frame(height: max(2, CGFloat(day.messageCount) / CGFloat(maxMsg) * 60))
-                            Text(String(day.date.suffix(2)))
-                                .font(.system(size: 7))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .frame(height: 75)
-            }
-        }
-    }
-
-    // MARK: - Model Usage
-
-    @ViewBuilder
-    var modelSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("All-Time Models", systemImage: "cpu")
-                .font(.subheadline.bold())
-                .foregroundStyle(.secondary)
-
-            ForEach(store.sortedModelUsage, id: \.name) { item in
-                HStack {
-                    Text(item.name)
-                        .font(.caption)
-                    Spacer()
-                    Text(formatTokens(item.usage.outputTokens))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Text("out")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-
-    func formatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 {
-            return String(format: "%.1fM", Double(count) / 1_000_000)
-        } else if count >= 1_000 {
-            return String(format: "%.1fK", Double(count) / 1_000)
-        }
-        return "\(count)"
-    }
 }
