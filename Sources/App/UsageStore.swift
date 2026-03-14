@@ -9,10 +9,16 @@ final class UsageStore {
     var isLoading = false
 
     private var timer: Timer?
+    private var consecutiveErrors = 0
+    private static let baseInterval: TimeInterval = 300  // 5분
+    private static let maxInterval: TimeInterval = 1800  // 30분
 
     init() {
-        refresh()
         startAutoRefresh()
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await fetchOAuthUsage()
+        }
     }
 
     func refresh() {
@@ -43,9 +49,19 @@ final class UsageStore {
         let result = await callUsageAPI(token: token)
         switch result {
         case .success(let data):
-            oauthUsage = try? JSONDecoder().decode(OAuthUsage.self, from: data)
-            lastRefresh = Date()
-            error = nil
+            do {
+                oauthUsage = try JSONDecoder().decode(OAuthUsage.self, from: data)
+                lastRefresh = Date()
+                error = nil
+                if consecutiveErrors > 0 {
+                    consecutiveErrors = 0
+                    rescheduleTimer()
+                }
+            } catch {
+                self.error = "Decode error"
+                consecutiveErrors += 1
+                rescheduleTimer()
+            }
         case .unauthorized:
             // 401 → 토큰 갱신 후 재시도
             let refreshed = await refreshOAuthToken()
@@ -55,25 +71,28 @@ final class UsageStore {
                     oauthUsage = try? JSONDecoder().decode(OAuthUsage.self, from: data)
                     lastRefresh = Date()
                     error = nil
+                    if consecutiveErrors > 0 {
+                        consecutiveErrors = 0
+                        rescheduleTimer()
+                    }
                 } else {
                     self.error = "API failed after token refresh"
+                    consecutiveErrors += 1
+                    rescheduleTimer()
                 }
             } else {
                 self.error = "Token refresh failed"
+                consecutiveErrors += 1
+                rescheduleTimer()
             }
         case .rateLimited(let retryAfter):
-            self.error = "Rate limited, retry in \(Int(retryAfter))s..."
-            try? await Task.sleep(nanoseconds: UInt64(retryAfter * 1_000_000_000))
-            if let token = getOAuthToken() {
-                let retry = await callUsageAPI(token: token)
-                if case .success(let data) = retry {
-                    oauthUsage = try? JSONDecoder().decode(OAuthUsage.self, from: data)
-                    lastRefresh = Date()
-                    error = nil
-                }
-            }
+            self.error = "Rate limited, retry in \(Int(retryAfter))s"
+            consecutiveErrors += 1
+            rescheduleTimer()
         case .error(let msg):
             self.error = msg
+            consecutiveErrors += 1
+            rescheduleTimer()
         }
     }
 
@@ -207,8 +226,19 @@ final class UsageStore {
         }
     }
 
+    private var currentInterval: TimeInterval {
+        let backoff = Self.baseInterval * pow(2.0, Double(min(consecutiveErrors, 3)))
+        return min(backoff, Self.maxInterval)
+    }
+
     private func startAutoRefresh() {
-        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+        rescheduleTimer()
+    }
+
+    private func rescheduleTimer() {
+        timer?.invalidate()
+        let interval = currentInterval
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }
@@ -216,7 +246,10 @@ final class UsageStore {
     // MARK: - Menu bar label
 
     var menuBarLabel: String {
-        guard let fiveH = oauthUsage?.fiveHour else { return "--" }
-        return "\(Int(fiveH.utilization))% \(fiveH.timeUntilReset)"
+        if let fiveH = oauthUsage?.fiveHour {
+            return "\(Int(fiveH.utilization))% \(fiveH.timeUntilReset)"
+        }
+        if error != nil { return "⏳" }
+        return "--"
     }
 }

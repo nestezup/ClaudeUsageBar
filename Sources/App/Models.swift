@@ -24,7 +24,7 @@ struct OAuthUsage: Codable {
 
 struct UsageLimit: Codable {
     let utilization: Double
-    let resetsAt: String
+    let resetsAt: String?
 
     enum CodingKeys: String, CodingKey {
         case utilization
@@ -32,6 +32,7 @@ struct UsageLimit: Codable {
     }
 
     var resetDate: Date? {
+        guard let resetsAt else { return nil }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f.date(from: resetsAt) { return d }
@@ -40,7 +41,7 @@ struct UsageLimit: Codable {
     }
 
     var timeUntilReset: String {
-        guard let date = resetDate else { return "?" }
+        guard let date = resetDate else { return "-" }
         let diff = date.timeIntervalSinceNow
         if diff <= 0 { return "now" }
         let h = Int(diff) / 3600
